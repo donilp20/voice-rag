@@ -1,0 +1,82 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Jupyter / notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+
+# Packaging / build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+pip-wheel-metadata/
+
+# IDE / editor settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Local runtime data
+.data/
+data/
+storage/
+cache/
+.tmp/
+.tmp*/
+*.sqlite3
+*.db
+
+# FastAPI / app runtime
+uploads/
+media/
+
+# OS files
+._*
+
+# Optional: local secrets / generated config
+secrets.*
+local_settings.py
+config.local.*
+
+# If you keep model or vector data locally, ignore them
+models/
+checkpoints/
+vector_store/
+qdrant_data/
+
+# Ignore generated docs if present
+site/
