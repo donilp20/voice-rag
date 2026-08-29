@@ -1,0 +1,108 @@
+"""
+Hierarchical Parent-Child Chunking (Step 2, architecture doc Layer 2).
+
+Parent unit  : the original MS MARCO-XI English passage (~150 words),
+               kept intact and used as LLM generation context.
+Child unit   : 1-2 sentence sub-chunks of a parent, used for fine-grained
+               retrieval matching.
+
+Sentence splitting is script-aware: MS MARCO English passages are pure
+Latin script, so in practice the Devanagari danda ("।") branch below is
+inert for this corpus. It's kept because the same splitter is reused by
+the Tier-1 query-encoding path (Step 4) for raw Indic user queries,
+which do need it — one splitter, one place to get boundary rules right.
+"""
+
+import hashlib
+import re
+
+from app.config import get_settings
+from app.models.ingestion_schemas import ChildChunk, ParentChunk
+
+settings = get_settings()
+
+# Matches sentence boundaries across Latin punctuation (. ! ?) and the
+# Devanagari/Gujarati sentence-final danda (।). Keeps the delimiter out
+# of the resulting sentence text.
+_SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?।])\s+")
+
+
+def split_sentences(text: str) -> list[str]:
+    """Split text into sentences, script-aware for Latin + Indic scripts."""
+    text = text.strip()
+    if not text:
+        return []
+    sentences = _SENTENCE_BOUNDARY_RE.split(text)
+    return [s.strip() for s in sentences if s.strip()]
+
+
+def make_parent_id(passage_text: str) -> str:
+    """Deterministic hash so identical passages (shared across queries) dedupe to one parent."""
+    return hashlib.sha256(passage_text.strip().encode("utf-8")).hexdigest()[:16]
+
+
+def make_chunk_id(parent_id: str, child_text: str) -> str:
+    """Deterministic hash so re-running ingestion is idempotent (same input -> same chunk_id)."""
+    raw = f"{parent_id}:{child_text.strip()}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def build_parent_chunk(
+    passage_text: str,
+    query_id: str,
+    source_lang: str,
+    is_selected: bool,
+) -> ParentChunk:
+    """Wrap a raw English passage into a typed ParentChunk."""
+    cleaned = passage_text.strip()
+    return ParentChunk(
+        parent_id=make_parent_id(cleaned),
+        text=cleaned,
+        word_count=len(cleaned.split()),
+        query_id=query_id,
+        source_lang=source_lang,
+        is_selected=is_selected,
+    )
+
+
+def build_child_chunks(
+    parent: ParentChunk,
+    sentence_span: int | None = None,
+) -> list[ChildChunk]:
+    """
+    Split a ParentChunk's text into overlapping-free sentence-span child
+    chunks (default: 1-2 sentences per child, per architecture doc).
+    """
+    span = sentence_span or settings.child_chunk_sentence_span
+    sentences = split_sentences(parent.text)
+
+    if not sentences:
+        return []
+
+    children: list[ChildChunk] = []
+    for i in range(0, len(sentences), span):
+        child_text = " ".join(sentences[i : i + span])
+        children.append(
+            ChildChunk(
+                chunk_id=make_chunk_id(parent.parent_id, child_text),
+                parent_id=parent.parent_id,
+                text=child_text,
+                sentence_span=len(sentences[i : i + span]),
+                query_id=parent.query_id,
+                source_lang=parent.source_lang,
+                is_selected=parent.is_selected,
+            )
+        )
+    return children
+
+
+def chunk_passage(
+    passage_text: str,
+    query_id: str,
+    source_lang: str,
+    is_selected: bool,
+) -> tuple[ParentChunk, list[ChildChunk]]:
+    """Convenience wrapper: raw passage text in, (parent, children) out."""
+    parent = build_parent_chunk(passage_text, query_id, source_lang, is_selected)
+    children = build_child_chunks(parent)
+    return parent, children
